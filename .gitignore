@@ -1,0 +1,14 @@
+# Build output
+build/
+out/
+stage/
+*.log
+*.xcodeproj/
+*.xcworkspace/
+
+# Tooling
+tools/bin/
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,62 @@
+name: BorderBeamDemo
+
+options:
+  bundleIdPrefix: com.borderbeam
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+targets:
+  BorderBeamDemo:
+    type: application
+    platform: iOS
+    sources:
+      # Library sources. Shaders are pulled in separately so they land in the
+      # Compile Sources phase (Xcode's Metal rule -> default.metallib).
+      - path: Sources/BorderBeam
+        excludes:
+          - "Shaders/**"
+      - path: Sources/BorderBeam/Shaders
+        buildPhase: sources
+      - path: Sources/BorderBeamDemo
+      - path: App
+        excludes:
+          - "Info.plist"
+          - "entitlements.plist"
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+    settings:
+      base:
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.borderbeam.demo
+        PRODUCT_NAME: BorderBeamDemo
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: NO
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        SWIFT_OPTIMIZATION_LEVEL: "-O"
+        SWIFT_COMPILATION_MODE: wholemodule
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SWIFT_EMIT_LOC_STRINGS: NO
+
+schemes:
+  BorderBeamDemo:
+    build:
+      targets:
+        BorderBeamDemo: all
+    run:
+      config: Release
+    archive:
+      config: Release
