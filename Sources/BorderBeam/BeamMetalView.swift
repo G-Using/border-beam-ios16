@@ -124,8 +124,9 @@ public final class BeamMetalView: UIView, MTKViewDelegate {
         bundle = Bundle(for: BeamMetalToken.self)
         #endif
 
-        // 1) precompiled metallib, if the host packaged one
-        var library = device.makeDefaultLibrary(bundle: bundle)
+        // 1) precompiled metallib, if the host packaged one.
+        //    makeDefaultLibrary(bundle:) is throwing and non-optional, so wrap it.
+        var library: MTLLibrary? = try? device.makeDefaultLibrary(bundle: bundle)
 
         // 2) otherwise compile the .metal source at runtime.
         //    This is the path used by plain .app bundles and Theos packages.

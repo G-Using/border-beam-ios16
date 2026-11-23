@@ -98,7 +98,7 @@ private struct PromptBox: View {
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(Capsule().fill(.white.opacity(0.07)))
         }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        .buttonStyle(.plain).menuIndicator(.hidden)
     }
 }
 
