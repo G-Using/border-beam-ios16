@@ -57,6 +57,14 @@ public final class BeamMetalView: UIView, MTKViewDelegate {
     private var phase: Float = Float.random(in: 0..<1)
     private var lastTime: CFTimeInterval?
 
+    /// Kernel source inlined at build time. An injected dylib has no bundle, so
+    /// this is the only way the tweak can get at the shader.
+    public static var embeddedShaderSource: String?
+
+    // Pipeline states are expensive; every beam in a process shares one.
+    private static var cachedDeviceID: ObjectIdentifier?
+    private static var cachedPipeline: MTLComputePipelineState?
+
     public var config: BeamRenderConfig = BeamRenderConfig() {
         didSet { applyConfig(from: oldValue) }
     }
@@ -117,6 +125,13 @@ public final class BeamMetalView: UIView, MTKViewDelegate {
 
     private func loadPipeline() {
         guard let device = self.device else { return }
+
+        if let cachedPipeline = Self.cachedPipeline,
+           Self.cachedDeviceID == ObjectIdentifier(device) {
+            pipeline = cachedPipeline
+            return
+        }
+
         let bundle: Bundle
         #if SWIFT_PACKAGE
         bundle = Bundle.module
@@ -124,22 +139,36 @@ public final class BeamMetalView: UIView, MTKViewDelegate {
         bundle = Bundle(for: BeamMetalToken.self)
         #endif
 
-        // 1) precompiled metallib, if the host packaged one.
-        //    makeDefaultLibrary(bundle:) is throwing and non-optional, so wrap it.
-        var library: MTLLibrary? = try? device.makeDefaultLibrary(bundle: bundle)
+        // Collect every source of the kernel we have, cheapest first, then take
+        // the first one that actually contains `borderBeamKernel`. Bundles can
+        // hold unrelated metallibs, so a library is not enough — check the name.
+        var libraries: [MTLLibrary] = []
 
-        // 2) otherwise compile the .metal source at runtime.
-        //    This is the path used by plain .app bundles and Theos packages.
-        if library == nil, let url = Self.metalSourceURL(in: bundle),
-           let source = try? String(contentsOf: url, encoding: .utf8) {
-            library = try? device.makeLibrary(source: source, options: nil)
+        // 1) metallib compiled into the app bundle by Xcode
+        if let lib = try? device.makeDefaultLibrary(bundle: bundle) {
+            libraries.append(lib)
+        }
+        // 2) raw .metal shipped next to the binary (hand-built .app / Theos)
+        if let url = Self.metalSourceURL(in: bundle),
+           let source = try? String(contentsOf: url, encoding: .utf8),
+           let lib = try? device.makeLibrary(source: source, options: nil) {
+            libraries.append(lib)
+        }
+        // 3) source inlined into the dylib (jailbreak tweak)
+        if let embedded = Self.embeddedShaderSource,
+           let lib = try? device.makeLibrary(source: embedded, options: nil) {
+            libraries.append(lib)
         }
 
-        guard let library, let function = library.makeFunction(name: "borderBeamKernel") else {
-            NSLog("BorderBeam: borderBeamKernel not found")
+        for library in libraries {
+            guard let function = library.makeFunction(name: "borderBeamKernel"),
+                  let state = try? device.makeComputePipelineState(function: function) else { continue }
+            pipeline = state
+            Self.cachedDeviceID = ObjectIdentifier(device)
+            Self.cachedPipeline = state
             return
         }
-        pipeline = try? device.makeComputePipelineState(function: function)
+        NSLog("BorderBeam: borderBeamKernel not found")
     }
 
     /// Looks for BorderBeam.metal at the bundle root, in a Shaders/ subfolder,

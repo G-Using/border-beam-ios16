@@ -7,6 +7,7 @@ on:
 
 env:
   APP_NAME: BorderBeamDemo
+  TWEAK_NAME: BorderBeamTweak
   VERSION: 1.0.0
 
 jobs:
@@ -24,6 +25,17 @@ jobs:
       - name: Install xcodegen
         run: brew install xcodegen
 
+      # An injected dylib has no bundle, so the kernel source is inlined into a
+      # Swift string and compiled at runtime the first time a beam is created.
+      - name: Inline the Metal kernel
+        run: |
+          { echo 'internal let beamShaderSource: String = ##"'; \
+            cat Sources/BorderBeam/Shaders/BorderBeam.metal; \
+            echo '"##'; } > Sources/BorderBeamTweak/GeneratedShader.swift
+          head -2 Sources/BorderBeamTweak/GeneratedShader.swift
+          tail -2 Sources/BorderBeamTweak/GeneratedShader.swift
+          wc -l Sources/BorderBeamTweak/GeneratedShader.swift
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -39,32 +51,51 @@ jobs:
             -derivedDataPath build \
             ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee build.log
+            build 2>&1 | tee build-app.log
+
+      - name: Build tweak dylib
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project BorderBeamDemo.xcodeproj \
+            -scheme BorderBeamTweak \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build-tweak.log
 
       - name: Verify app bundle
         run: |
           APP=build/Build/Products/Release-iphoneos/${APP_NAME}.app
-          test -d "$APP" || { echo "::error::app bundle missing"; tail -80 build.log; exit 1; }
+          test -d "$APP" || { echo "::error::app bundle missing"; tail -80 build-app.log; exit 1; }
           test -x "$APP/${APP_NAME}" || { echo "::error::executable missing"; ls -la "$APP"; exit 1; }
-          echo "--- bundle ---"
           ls -la "$APP"
-          echo "--- arch ---"
           lipo -info "$APP/${APP_NAME}"
-          echo "--- plist ---"
-          plutil -p "$APP/Info.plist"
 
-      - name: Ensure a Metal shader resource ships
+      - name: Verify tweak dylib
         run: |
-          # Preferred: Xcode compiled Shaders/BorderBeam.metal into default.metallib.
-          # Fallback: ship the .metal source and let BeamMetalView compile it at runtime.
+          DYLIB=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.dylib" | head -1)
+          test -n "$DYLIB" || { echo "::error::no dylib produced"; tail -120 build-tweak.log; exit 1; }
+          echo "dylib: $DYLIB"
+          lipo -info "$DYLIB"
+          file "$DYLIB"
+          echo "--- entry symbol ---"
+          nm -gU "$DYLIB" | grep -i borderBeam_init || { echo "::error::entry symbol missing"; exit 1; }
+          echo "--- kernel name inlined ---"
+          strings "$DYLIB" | grep -c borderBeamKernel || true
+          echo "--- linked libraries ---"
+          otool -L "$DYLIB"
+          echo "$DYLIB" > /tmp/dylib_path
+
+      - name: Ensure a Metal shader resource ships in the app
+        run: |
           APP=build/Build/Products/Release-iphoneos/${APP_NAME}.app
           if [ ! -f "$APP/default.metallib" ]; then
-            echo "::warning::default.metallib not produced by the build - falling back to runtime shader compilation"
+            echo "::warning::default.metallib missing - falling back to runtime compilation"
             cp Sources/BorderBeam/Shaders/BorderBeam.metal "$APP/"
-          fi
-          if [ ! -f "$APP/default.metallib" ] && [ ! -f "$APP/BorderBeam.metal" ]; then
-            echo "::error::no shader resource in the bundle, the beam would render nothing"
-            exit 1
           fi
           ls -la "$APP" | grep -Ei "metallib|\.metal" || true
 
@@ -76,49 +107,76 @@ jobs:
             "https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/$A" \
             -o tools/bin/ldid
           chmod +x tools/bin/ldid
-          tools/bin/ldid -h 2>&1 | head -3 || true
 
-      - name: Stage payload and sign
+      - name: Stage app payload and sign
         run: |
           APP=build/Build/Products/Release-iphoneos/${APP_NAME}.app
-          BIN_NAME=${APP_NAME}
-          rm -rf stage
-          mkdir -p stage/var/jb/Applications
-          cp -R "$APP" stage/var/jb/Applications/
-          BIN=stage/var/jb/Applications/${APP_NAME}.app/${BIN_NAME}
+          rm -rf stage-app
+          mkdir -p stage-app/var/jb/Applications
+          cp -R "$APP" stage-app/var/jb/Applications/
+          BIN=stage-app/var/jb/Applications/${APP_NAME}.app/${APP_NAME}
           chmod 755 "$BIN"
           tools/bin/ldid -S"$GITHUB_WORKSPACE/App/entitlements.plist" "$BIN"
-          echo "--- entitlements on the binary ---"
-          tools/bin/ldid -e "$BIN" || true
+          tools/bin/ldid -e "$BIN" | head -5 || true
 
-      - name: Pack rootless deb
+      - name: Stage tweak payload
+        run: |
+          DYLIB=$(cat /tmp/dylib_path)
+          rm -rf stage-tweak
+          DIR=stage-tweak/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p "$DIR"
+          cp "$DYLIB" "$DIR/${TWEAK_NAME}.dylib"
+          cp Tweak/${TWEAK_NAME}.plist "$DIR/"
+          chmod 755 "$DIR/${TWEAK_NAME}.dylib"
+          chmod 644 "$DIR/${TWEAK_NAME}.plist"
+          ls -la "$DIR"
+          plutil -p "$DIR/${TWEAK_NAME}.plist"
+
+      - name: Pack app debs
         run: |
           mkdir -p out
-          python3 tools/pack_deb.py --payload stage --arch iphoneos-arm64 \
+          python3 tools/pack_deb.py --payload stage-app --arch iphoneos-arm64 \
             --out out/${APP_NAME}_${VERSION}_iphoneos-arm64.deb
-
-      - name: Pack roothide deb
-        run: |
-          python3 tools/pack_deb.py --payload stage --arch iphoneos-arm64e \
+          python3 tools/pack_deb.py --payload stage-app --arch iphoneos-arm64e \
             --out out/${APP_NAME}_${VERSION}_iphoneos-arm64e.deb
+
+      - name: Pack tweak debs
+        run: |
+          python3 tools/pack_deb.py --payload stage-tweak \
+            --package com.borderbeam.tweak \
+            --name "BorderBeam" \
+            --section Tweaks \
+            --depends "firmware (>= 15.0)" \
+            --description "Animated Metal border beam around the text field you are typing in." \
+            --arch iphoneos-arm64 \
+            --out out/${TWEAK_NAME}_${VERSION}_iphoneos-arm64.deb
+          python3 tools/pack_deb.py --payload stage-tweak \
+            --package com.borderbeam.tweak \
+            --name "BorderBeam" \
+            --section Tweaks \
+            --depends "firmware (>= 15.0)" \
+            --description "Animated Metal border beam around the text field you are typing in." \
+            --arch iphoneos-arm64e \
+            --out out/${TWEAK_NAME}_${VERSION}_iphoneos-arm64e.deb
 
       - name: Verify debs
         run: |
           for f in out/*.deb; do
             echo "=== $f ==="
             ar t "$f"
-            mkdir -p /tmp/x && rm -rf /tmp/x/* && cd /tmp/x && ar x "$OLDPWD/$f"
-            tar xzf data.tar.gz
-            echo "--- data tree ---"; find . -maxdepth 6 -not -path "./data.tar.gz" -not -path "./control.tar.gz" -not -path "./debian-binary" | sort | head -40
-            echo "--- control ---"; tar xzOf control.tar.gz ./control
-            echo "--- exec bits ---"; find . -path "*${APP_NAME}.app*" -type f -perm -111 | head
-            cd "$OLDPWD"
+            rm -rf /tmp/x && mkdir -p /tmp/x && cp "$f" /tmp/x/pkg.deb
+            ( cd /tmp/x && ar x pkg.deb && tar xzf data.tar.gz && \
+              echo "--- data ---" && \
+              find . -not -path "./data.tar.gz" -not -path "./control.tar.gz" \
+                -not -path "./debian-binary" -not -path "./pkg.deb" | sort && \
+              echo "--- control ---" && tar xzOf control.tar.gz ./control && \
+              echo "--- exec ---" && find . -type f -perm -111 | sort )
           done
 
       - name: Source zip
         run: |
-          zip -r out/BorderBeam-iOS15-src.zip . \
-            -x "build/*" "out/*" "stage/*" ".git/*" "*.xcodeproj/*" "*.log" "tools/bin/*"
+          zip -r out/BorderBeam-src.zip . \
+            -x "build/*" "out/*" "stage-*/*" ".git/*" "*.xcodeproj/*" "*.log" "tools/bin/*"
 
       - name: List artifacts
         run: ls -la out

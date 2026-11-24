@@ -9,6 +9,9 @@ stage/
 # Tooling
 tools/bin/
 
+# Generated at build time from Shaders/BorderBeam.metal
+Sources/BorderBeamTweak/GeneratedShader.swift
+
 # OS noise
 .DS_Store
 Thumbs.db

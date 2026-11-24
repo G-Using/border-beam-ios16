@@ -104,6 +104,8 @@ def main():
         default="Animated Metal border beam for SwiftUI. Demo app for iOS 15/16 "
                 "rootless and roothide jailbreaks.",
     )
+    ap.add_argument("--section", default="Applications")
+    ap.add_argument("--depends", default="")
     args = ap.parse_args()
 
     base = os.path.abspath(args.payload)
@@ -123,9 +125,11 @@ def main():
         f"Description: {args.description}\n"
         f"Maintainer: {args.maintainer}\n"
         f"Author: {args.author}\n"
-        "Section: Applications\n"
+        f"Section: {args.section}\n"
         "Priority: optional\n"
     )
+    if args.depends:
+        control += f"Depends: {args.depends}\n"
 
     ctrl_dir = os.path.join(base, ".debian")
     os.makedirs(ctrl_dir, exist_ok=True)
