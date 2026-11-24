@@ -27,11 +27,12 @@ jobs:
 
       # An injected dylib has no bundle, so the kernel source is inlined into a
       # Swift string and compiled at runtime the first time a beam is created.
+      # NB: a multi-line raw string opens with `##"""` and closes with `"""##`.
       - name: Inline the Metal kernel
         run: |
-          { echo 'internal let beamShaderSource: String = ##"'; \
+          { echo 'internal let beamShaderSource: String = ##"""'; \
             cat Sources/BorderBeam/Shaders/BorderBeam.metal; \
-            echo '"##'; } > Sources/BorderBeamTweak/GeneratedShader.swift
+            echo '"""##'; } > Sources/BorderBeamTweak/GeneratedShader.swift
           head -2 Sources/BorderBeamTweak/GeneratedShader.swift
           tail -2 Sources/BorderBeamTweak/GeneratedShader.swift
           wc -l Sources/BorderBeamTweak/GeneratedShader.swift
