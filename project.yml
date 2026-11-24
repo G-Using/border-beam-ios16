@@ -49,24 +49,22 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.borderbeam.demo
         PRODUCT_NAME: BorderBeamDemo
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         SWIFT_EMIT_LOC_STRINGS: NO
 
   # ------------------------------------------------------- jailbreak tweak
+  # Deliberately standalone: the tweak does NOT link the Metal library. It only
+  # needs UIKit + QuartzCore, which exist in every injected process. A smaller
+  # dependency surface means fewer ways for the dylib to fail silently.
   BorderBeamTweak:
     type: library.dynamic
     platform: iOS
     sources:
-      - path: Sources/BorderBeam
-        excludes:
-          - "Shaders/**"
       - path: Sources/BorderBeamTweak
     dependencies:
-      - sdk: Metal.framework
-      - sdk: MetalKit.framework
       - sdk: UIKit.framework
     settings:
       base:

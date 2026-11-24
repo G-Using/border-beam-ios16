@@ -1,17 +1,18 @@
 Pod::Spec.new do |s|
   s.name         = "BorderBeam"
-  s.version      = "1.0.0"
-  s.summary      = "GPU-rendered (Metal shader) animated border beam for any SwiftUI view."
-  s.homepage     = "https://github.com/ismnoiet/border-beam-ios"
+  s.version      = "1.1.0"
+  s.summary      = "Animated border beam for any view, ported to iOS 15/16."
+  s.homepage     = "https://github.com/G-Using/border-beam-ios16"
   s.license      = { :type => "MIT", :file => "LICENSE" }
-  s.author       = { "ismnoiet" => "ismnoiet" }
+  s.author       = { "G-Using" => "G-Using@users.noreply.github.com" }
 
-  # iOS 16 port: Metal compute via MTKView instead of SwiftUI colorEffect
-  s.platform     = :ios, "16.0"
-  s.swift_version = "5.9"
+  # Port of ismnoiet/border-beam-ios: UIKit + Metal compute (MTKView) instead of
+  # the iOS 17-only SwiftUI colorEffect pipeline.
+  s.platform     = :ios, "15.0"
+  s.swift_version = "5.0"
 
   s.source       = {
-    :git => "https://github.com/ismnoiet/border-beam-ios.git",
+    :git => "https://github.com/G-Using/border-beam-ios16.git",
     :tag => "#{s.version}"
   }
 

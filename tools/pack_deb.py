@@ -96,13 +96,13 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--package", default="com.borderbeam.demo")
     ap.add_argument("--name", default="BorderBeam Demo")
-    ap.add_argument("--version", default="1.0.0")
-    ap.add_argument("--maintainer", default="local")
-    ap.add_argument("--author", default="ismnoiet (iOS 15/16 port)")
+    ap.add_argument("--version", default="1.1.0")
+    ap.add_argument("--maintainer", default="G-Using <G-Using@users.noreply.github.com>")
+    ap.add_argument("--author", default="G-Using <G-Using@users.noreply.github.com>")
     ap.add_argument(
         "--description",
-        default="Animated Metal border beam for SwiftUI. Demo app for iOS 15/16 "
-                "rootless and roothide jailbreaks.",
+        default="Animated border beam for iOS 15/16. Demo app and jailbreak tweak "
+                "for rootless and roothide.",
     )
     ap.add_argument("--section", default="Applications")
     ap.add_argument("--depends", default="")

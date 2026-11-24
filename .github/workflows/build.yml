@@ -8,7 +8,8 @@ on:
 env:
   APP_NAME: BorderBeamDemo
   TWEAK_NAME: BorderBeamTweak
-  VERSION: 1.0.0
+  VERSION: 1.1.0
+  PKG_AUTHOR: "G-Using <G-Using@users.noreply.github.com>"
 
 jobs:
   build:
@@ -24,18 +25,6 @@ jobs:
 
       - name: Install xcodegen
         run: brew install xcodegen
-
-      # An injected dylib has no bundle, so the kernel source is inlined into a
-      # Swift string and compiled at runtime the first time a beam is created.
-      # NB: a multi-line raw string opens with `##"""` and closes with `"""##`.
-      - name: Inline the Metal kernel
-        run: |
-          { echo 'internal let beamShaderSource: String = ##"""'; \
-            cat Sources/BorderBeam/Shaders/BorderBeam.metal; \
-            echo '"""##'; } > Sources/BorderBeamTweak/GeneratedShader.swift
-          head -2 Sources/BorderBeamTweak/GeneratedShader.swift
-          tail -2 Sources/BorderBeamTweak/GeneratedShader.swift
-          wc -l Sources/BorderBeamTweak/GeneratedShader.swift
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -85,10 +74,17 @@ jobs:
           file "$DYLIB"
           echo "--- entry symbol ---"
           nm -gU "$DYLIB" | grep -i borderBeam_init || { echo "::error::entry symbol missing"; exit 1; }
-          echo "--- kernel name inlined ---"
-          strings "$DYLIB" | grep -c borderBeamKernel || true
-          echo "--- linked libraries ---"
+          echo "--- load-time hooks (constructor + ObjC +load) ---"
+          otool -l "$DYLIB" | grep -q "__mod_init_func" || { echo "::error::no __mod_init_func section - Entry.m was not compiled"; exit 1; }
+          nm -gU "$DYLIB" | grep -q "_OBJC_CLASS_\$_BorderBeamLoader" || { echo "::error::loader class missing"; exit 1; }
+          echo "--- renderer present ---"
+          nm -gU "$DYLIB" | grep -ic "BeamSweepView" || true
+          echo "--- linked libraries (must be system-only, no Metal) ---"
           otool -L "$DYLIB"
+          if otool -L "$DYLIB" | grep -Eiq "Metal|MetalKit"; then
+            echo "::error::tweak still links Metal; it must not"
+            exit 1
+          fi
           echo "$DYLIB" > /tmp/dylib_path
 
       - name: Ensure a Metal shader resource ships in the app
@@ -120,45 +116,51 @@ jobs:
           tools/bin/ldid -S"$GITHUB_WORKSPACE/App/entitlements.plist" "$BIN"
           tools/bin/ldid -e "$BIN" | head -5 || true
 
+      # Two loader directories on purpose:
+      #   Library/MobileSubstrate/DynamicLibraries -> ElleKit on rootless (Dopamine)
+      #   usr/lib/TweakInject                      -> roothide bootstrap
+      # Shipping both is what makes one deb work on either device.
       - name: Stage tweak payload
         run: |
           DYLIB=$(cat /tmp/dylib_path)
           rm -rf stage-tweak
-          DIR=stage-tweak/var/jb/Library/MobileSubstrate/DynamicLibraries
-          mkdir -p "$DIR"
-          cp "$DYLIB" "$DIR/${TWEAK_NAME}.dylib"
-          cp Tweak/${TWEAK_NAME}.plist "$DIR/"
-          chmod 755 "$DIR/${TWEAK_NAME}.dylib"
-          chmod 644 "$DIR/${TWEAK_NAME}.plist"
-          ls -la "$DIR"
-          plutil -p "$DIR/${TWEAK_NAME}.plist"
+          for DIR in \
+            stage-tweak/var/jb/Library/MobileSubstrate/DynamicLibraries \
+            stage-tweak/var/jb/usr/lib/TweakInject ; do
+            mkdir -p "$DIR"
+            cp "$DYLIB" "$DIR/${TWEAK_NAME}.dylib"
+            cp Tweak/${TWEAK_NAME}.plist "$DIR/"
+            chmod 755 "$DIR/${TWEAK_NAME}.dylib"
+            chmod 644 "$DIR/${TWEAK_NAME}.plist"
+          done
+          find stage-tweak -type f | sort
+          plutil -p "stage-tweak/var/jb/usr/lib/TweakInject/${TWEAK_NAME}.plist"
 
       - name: Pack app debs
         run: |
           mkdir -p out
           python3 tools/pack_deb.py --payload stage-app --arch iphoneos-arm64 \
+            --version "$VERSION" --maintainer "$PKG_AUTHOR" --author "$PKG_AUTHOR" \
             --out out/${APP_NAME}_${VERSION}_iphoneos-arm64.deb
           python3 tools/pack_deb.py --payload stage-app --arch iphoneos-arm64e \
+            --version "$VERSION" --maintainer "$PKG_AUTHOR" --author "$PKG_AUTHOR" \
             --out out/${APP_NAME}_${VERSION}_iphoneos-arm64e.deb
 
       - name: Pack tweak debs
         run: |
-          python3 tools/pack_deb.py --payload stage-tweak \
-            --package com.borderbeam.tweak \
-            --name "BorderBeam" \
-            --section Tweaks \
-            --depends "firmware (>= 15.0)" \
-            --description "Animated Metal border beam around the text field you are typing in." \
-            --arch iphoneos-arm64 \
-            --out out/${TWEAK_NAME}_${VERSION}_iphoneos-arm64.deb
-          python3 tools/pack_deb.py --payload stage-tweak \
-            --package com.borderbeam.tweak \
-            --name "BorderBeam" \
-            --section Tweaks \
-            --depends "firmware (>= 15.0)" \
-            --description "Animated Metal border beam around the text field you are typing in." \
-            --arch iphoneos-arm64e \
-            --out out/${TWEAK_NAME}_${VERSION}_iphoneos-arm64e.deb
+          for ARCH in iphoneos-arm64 iphoneos-arm64e ; do
+            python3 tools/pack_deb.py --payload stage-tweak \
+              --package com.borderbeam.tweak \
+              --name "BorderBeam" \
+              --version "$VERSION" \
+              --maintainer "$PKG_AUTHOR" \
+              --author "$PKG_AUTHOR" \
+              --section Tweaks \
+              --depends "firmware (>= 15.0)" \
+              --description "Animated border beam around the text field you are typing in. CoreAnimation renderer, iOS 15/16 rootless + roothide." \
+              --arch "$ARCH" \
+              --out out/${TWEAK_NAME}_${VERSION}_${ARCH}.deb
+          done
 
       - name: Verify debs
         run: |

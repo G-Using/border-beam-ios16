@@ -2,14 +2,12 @@
 //  TweakMain.swift
 //  BorderBeamTweak
 //
-//  Entry point. `beamShaderSource` is generated at build time from
-//  Sources/BorderBeam/Shaders/BorderBeam.metal so the dylib carries the
-//  kernel inside itself (an injected dylib has no bundle to read it from).
+//  Entry point, called from the C constructor in Entry.c.
 //
 import UIKit
 
 @_cdecl("borderBeam_init")
 public func borderBeam_init() {
-    BeamMetalView.embeddedShaderSource = beamShaderSource
+    NSLog("[BorderBeam] dylib loaded (v1.1.0, CoreAnimation renderer)")
     BeamHook.install()
 }
