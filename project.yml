@@ -74,6 +74,9 @@ targets:
         SKIP_INSTALL: YES
         LD_DYLIB_INSTALL_NAME: "@rpath/BorderBeamTweak.dylib"
         DYLIB_INSTALL_NAME_BASE: ""
+        # Keep every symbol, especially the load-time entry points.
+        DEAD_CODE_STRIPPING: NO
+        STRIP_INSTALLED_PRODUCT: NO
 
 schemes:
   BorderBeamDemo:

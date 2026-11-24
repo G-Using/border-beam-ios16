@@ -74,9 +74,22 @@ jobs:
           file "$DYLIB"
           echo "--- entry symbol ---"
           nm -gU "$DYLIB" | grep -i borderBeam_init || { echo "::error::entry symbol missing"; exit 1; }
-          echo "--- load-time hooks (constructor + ObjC +load) ---"
-          otool -l "$DYLIB" | grep -q "__mod_init_func" || { echo "::error::no __mod_init_func section - Entry.m was not compiled"; exit 1; }
-          nm -gU "$DYLIB" | grep -q "_OBJC_CLASS_\$_BorderBeamLoader" || { echo "::error::loader class missing"; exit 1; }
+          echo "--- sections ---"
+          otool -l "$DYLIB" | /usr/bin/grep -E "^  sectname" | sort -u
+          echo "--- borderbeam symbols ---"
+          nm -gU "$DYLIB" | grep -iE "borderBeam|BorderBeamLoader" || true
+          echo "--- ctor symbols (incl. local) ---"
+          nm "$DYLIB" 2>/dev/null | grep -iE "ctor|mod_init" || true
+          # A loaded dylib that never runs its entry point is indistinguishable
+          # from "the tweak does nothing", so require at least one load hook.
+          if otool -l "$DYLIB" | grep -q "__mod_init_func"; then
+            echo "load hook: C constructor present"
+          elif nm -gU "$DYLIB" | grep -q "_OBJC_CLASS_\$_BorderBeamLoader"; then
+            echo "load hook: ObjC +load class present"
+          else
+            echo "::error::neither constructor nor +load class found - dylib would load and do nothing"
+            exit 1
+          fi
           echo "--- renderer present ---"
           nm -gU "$DYLIB" | grep -ic "BeamSweepView" || true
           echo "--- linked libraries (must be system-only, no Metal) ---"

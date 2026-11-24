@@ -7,10 +7,12 @@
 //    1. a C constructor (`__mod_init_func`), and
 //    2. `+load` on an ObjC class.
 //
-//  Whichever fires first wins; `dispatch_once` makes the second a no-op. v1.0
-//  relied on (1) alone and on some loader/optimisation combinations the dylib
-//  loaded without ever running the hooks, which looks exactly like "the tweak
-//  does nothing".
+//  Whichever fires first wins; `dispatch_once` makes the second a no-op.
+//
+//  v1.0 relied on a constructor alone, and the Release build dead-stripped it:
+//  the dylib loaded, nothing ran, and the tweak looked completely dead. The
+//  constructor is therefore non-static + `used`, and the target builds with
+//  DEAD_CODE_STRIPPING = NO.
 //
 #import <Foundation/Foundation.h>
 
@@ -23,11 +25,12 @@ static void borderbeam_install_once(void) {
     });
 }
 
-__attribute__((constructor))
-static void borderbeam_ctor(void) {
+__attribute__((constructor, used, visibility("default")))
+void borderbeam_ctor(void) {
     borderbeam_install_once();
 }
 
+__attribute__((objc_root_class))
 @interface BorderBeamLoader : NSObject
 @end
 
