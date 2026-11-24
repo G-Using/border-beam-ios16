@@ -8,6 +8,6 @@ import UIKit
 
 @_cdecl("borderBeam_init")
 public func borderBeam_init() {
-    NSLog("[BorderBeam] dylib loaded (v1.1.0, CoreAnimation renderer)")
+    NSLog("[BorderBeam] dylib loaded (v1.1.1, CoreAnimation renderer)")
     BeamHook.install()
 }

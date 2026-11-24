@@ -8,7 +8,7 @@ on:
 env:
   APP_NAME: BorderBeamDemo
   TWEAK_NAME: BorderBeamTweak
-  VERSION: 1.1.0
+  VERSION: 1.1.1
   PKG_AUTHOR: "G-Using <G-Using@users.noreply.github.com>"
 
 jobs:
@@ -133,25 +133,27 @@ jobs:
           tools/bin/ldid -S"$GITHUB_WORKSPACE/App/entitlements.plist" "$BIN"
           tools/bin/ldid -e "$BIN" | head -5 || true
 
-      # Two loader directories on purpose:
-      #   Library/MobileSubstrate/DynamicLibraries -> ElleKit on rootless (Dopamine)
-      #   usr/lib/TweakInject                      -> roothide bootstrap
-      # Shipping both is what makes one deb work on either device.
+      # Single loader directory on purpose.
+      #
+      # v1.1.0 also shipped a copy under var/jb/usr/lib/TweakInject as a "belt and
+      # braces" measure. On roothide that directory does not exist, dpkg will not
+      # create it, and the whole unpack aborted with:
+      #   unable to open '.../TweakInject/BorderBeamTweak.dylib.dpkg-new':
+      #   No such file or directory
+      # Library/MobileSubstrate/DynamicLibraries is the canonical path for both
+      # rootless and roothide loaders, so that is the only one we install now.
       - name: Stage tweak payload
         run: |
           DYLIB=$(cat /tmp/dylib_path)
           rm -rf stage-tweak
-          for DIR in \
-            stage-tweak/var/jb/Library/MobileSubstrate/DynamicLibraries \
-            stage-tweak/var/jb/usr/lib/TweakInject ; do
-            mkdir -p "$DIR"
-            cp "$DYLIB" "$DIR/${TWEAK_NAME}.dylib"
-            cp Tweak/${TWEAK_NAME}.plist "$DIR/"
-            chmod 755 "$DIR/${TWEAK_NAME}.dylib"
-            chmod 644 "$DIR/${TWEAK_NAME}.plist"
-          done
+          DIR=stage-tweak/var/jb/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p "$DIR"
+          cp "$DYLIB" "$DIR/${TWEAK_NAME}.dylib"
+          cp Tweak/${TWEAK_NAME}.plist "$DIR/"
+          chmod 755 "$DIR/${TWEAK_NAME}.dylib"
+          chmod 644 "$DIR/${TWEAK_NAME}.plist"
           find stage-tweak -type f | sort
-          plutil -p "stage-tweak/var/jb/usr/lib/TweakInject/${TWEAK_NAME}.plist"
+          plutil -p "$DIR/${TWEAK_NAME}.plist"
 
       - name: Pack app debs
         run: |
