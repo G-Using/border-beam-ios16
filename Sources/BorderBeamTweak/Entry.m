@@ -30,7 +30,6 @@ void borderbeam_ctor(void) {
     borderbeam_install_once();
 }
 
-__attribute__((objc_root_class))
 @interface BorderBeamLoader : NSObject
 @end
 
