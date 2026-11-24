@@ -82,7 +82,9 @@ jobs:
           nm "$DYLIB" 2>/dev/null | grep -iE "ctor|mod_init" || true
           # A loaded dylib that never runs its entry point is indistinguishable
           # from "the tweak does nothing", so require at least one load hook.
-          if otool -l "$DYLIB" | grep -q "__mod_init_func"; then
+          # (With chained fixups the constructor lives in __init_offsets, not
+          # __mod_init_func.)
+          if otool -l "$DYLIB" | grep -qE "__mod_init_func|__init_offsets"; then
             echo "load hook: C constructor present"
           elif nm -gU "$DYLIB" | grep -q "_OBJC_CLASS_\$_BorderBeamLoader"; then
             echo "load hook: ObjC +load class present"
@@ -91,11 +93,13 @@ jobs:
             exit 1
           fi
           echo "--- renderer present ---"
-          nm -gU "$DYLIB" | grep -ic "BeamSweepView" || true
-          echo "--- linked libraries (must be system-only, no Metal) ---"
+          nm "$DYLIB" 2>/dev/null | grep -c "BeamSweepView" || true
+          echo "--- linked frameworks (no Metal / MetalKit allowed) ---"
           otool -L "$DYLIB"
-          if otool -L "$DYLIB" | grep -Eiq "Metal|MetalKit"; then
-            echo "::error::tweak still links Metal; it must not"
+          # libswiftMetal.dylib is a weak system autolink and harmless; a real
+          # Metal.framework / MetalKit.framework dependency is not.
+          if otool -L "$DYLIB" | grep -Eq "(Metal|MetalKit)\.framework"; then
+            echo "::error::tweak links Metal; it must not"
             exit 1
           fi
           echo "$DYLIB" > /tmp/dylib_path
